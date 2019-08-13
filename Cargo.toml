@@ -1,0 +1,14 @@
+[package]
+name = "erc20"
+version = "0.1.0"
+authors = ["Jun Kimura <junkxdev@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+hmc = { git = "https://github.com/bluele/hypermint", tag = "v0.3.0" }
+
+[dev-dependencies]
+hmemu = { git = "https://github.com/bluele/hmemu", branch = "develop" }
+
+[lib]
+crate-type = ["cdylib"]
