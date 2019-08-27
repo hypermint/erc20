@@ -11,4 +11,4 @@ hmc = { git = "https://github.com/bluele/hypermint", branch = "develop" }
 hmemu = { git = "https://github.com/bluele/hmemu", branch = "develop" }
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["staticlib", "lib"]
