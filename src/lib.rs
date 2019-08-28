@@ -1,15 +1,15 @@
 extern crate hmc;
 
-static TOTAL_SUPPLY: i64 = 100000 * 10;
+pub static TOTAL_SUPPLY: i64 = 100000 * 10;
 
-#[no_mangle]
+#[cfg_attr(not(feature = "emulation"), no_mangle)]
 pub fn init() -> i32 {
     let sender = hmc::get_sender().unwrap();
     hmc::write_state(&sender, &TOTAL_SUPPLY.to_be_bytes());
     0
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "emulation"), no_mangle)]
 pub fn transfer() -> i32 {
     match call_transfer() {
         Ok(v) => v,
@@ -20,7 +20,7 @@ pub fn transfer() -> i32 {
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "emulation"), no_mangle)]
 pub fn approve() -> i32 {
     match _approve() {
         Ok(true) => 0,
@@ -33,7 +33,7 @@ pub fn approve() -> i32 {
     0
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "emulation"), no_mangle)]
 pub fn allowance() -> i32 {
     match _allowance() {
         Ok(v) => hmc::return_value(&v.to_be_bytes()),
@@ -103,7 +103,7 @@ fn _transfer(sender: &[u8], to: &[u8], amount: i64) -> Result<i32, String> {
     Ok(hmc::return_value(&to_amount))
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "emulation"), no_mangle)]
 #[allow(non_snake_case)]
 pub fn balanceOf() -> i32 {
     let sender = hmc::get_sender().unwrap();
@@ -123,7 +123,7 @@ fn _balance_of(addr: &[u8]) -> Result<i64, String> {
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "emulation"), no_mangle)]
 #[allow(non_snake_case)]
 pub fn transferFrom() -> i32 {
     match _transfer_from() {
