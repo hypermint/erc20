@@ -8,10 +8,10 @@ edition = "2018"
 emulation = []
 
 [dependencies]
-hmc = { git = "https://github.com/bluele/hypermint", branch = "develop" }
+hmc = { git = "https://github.com/bluele/hypermint", tag = "v0.4.1" }
 
 [dev-dependencies]
-hmemu = { git = "https://github.com/bluele/hmemu", branch = "develop" }
+hmemu = { git = "https://github.com/bluele/hmemu", tag = "v0.0.1" }
 
 [lib]
 crate-type = ["staticlib", "lib"]
