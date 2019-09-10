@@ -4,13 +4,11 @@ jobs:
   test:
     working_directory: /go/src/github.com/hypermint/erc20
     docker:
-      - image: rust:1.37.0-buster
+      - image: hypermint/go-rust:v0.2.0
+    environment:
+      GO111MODULE: "on"
     steps:
       - checkout
-      - run:
-          name: "build lib"
-          command: |
-            make build
       - run:
           name: "setup lint tools"
           command: |
