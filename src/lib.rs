@@ -1,173 +1,122 @@
-extern crate hmc;
+extern crate hmcdk;
+use hmcdk::api;
+use hmcdk::error;
+use hmcdk::prelude::*;
 
-pub static TOTAL_SUPPLY: i64 = 100000 * 10;
+pub static TOTAL_SUPPLY: i64 = 100_000 * 10;
 
-#[cfg_attr(not(feature = "emulation"), no_mangle)]
-pub fn init() -> i32 {
-    let sender = hmc::get_sender().unwrap();
-    hmc::write_state(&sender, &TOTAL_SUPPLY.to_be_bytes());
-    0
+#[contract]
+pub fn init() -> R<i32> {
+    let sender = api::get_sender()?;
+    api::write_state(&sender, &TOTAL_SUPPLY.to_bytes());
+    Ok(None)
 }
 
-#[cfg_attr(not(feature = "emulation"), no_mangle)]
-pub fn transfer() -> i32 {
-    match call_transfer() {
-        Ok(v) => v,
-        Err(e) => {
-            hmc::revert(e);
-            -1
-        }
-    }
+#[contract]
+pub fn transfer() -> R<i64> {
+    let to: Address = api::get_arg(0)?;
+    let amount: i64 = api::get_arg(1)?;
+    let sender = api::get_sender()?;
+
+    Ok(Some(_transfer(&sender, &to, amount)?))
 }
 
-#[cfg_attr(not(feature = "emulation"), no_mangle)]
-pub fn approve() -> i32 {
-    match _approve() {
-        Ok(true) => 0,
-        Ok(false) => 1,
-        Err(e) => {
-            hmc::revert(e);
-            -1
-        }
-    };
-    0
+#[contract]
+pub fn approve() -> R<bool> {
+    let sender = api::get_sender()?;
+    let spender: Address = api::get_arg(0)?;
+    let value: i64 = api::get_arg(1)?;
+    let key = make_approve_key(&sender, &spender);
+    api::write_state(&key, &value.to_be_bytes());
+
+    Ok(Some(true))
 }
 
-#[cfg_attr(not(feature = "emulation"), no_mangle)]
-pub fn allowance() -> i32 {
-    match _allowance() {
-        Ok(v) => hmc::return_value(&v.to_be_bytes()),
-        Err(e) => {
-            hmc::revert(e);
-            -1
-        }
-    }
-}
-
-fn bytes_to_i64(bs: &[u8]) -> i64 {
-    let mut v: [u8; 8] = Default::default();
-    v.copy_from_slice(bs);
-
-    i64::from_be_bytes(v)
-}
-
-fn _allowance() -> Result<i64, String> {
-    let owner = hmc::hex_to_bytes(hmc::get_arg_str(0)?.as_ref());
-    let spender = hmc::hex_to_bytes(hmc::get_arg_str(1)?.as_ref());
+#[contract]
+pub fn allowance() -> R<i64> {
+    let owner: Address = api::get_arg(0)?;
+    let spender: Address = api::get_arg(1)?;
 
     let key = make_approve_key(&owner, &spender);
-    Ok(bytes_to_i64(&hmc::read_state(&key)?))
+    Ok(Some(api::read_state(&key)?))
 }
 
-fn _approve() -> Result<bool, String> {
-    let sender = hmc::get_sender()?;
-    let spender = hmc::hex_to_bytes(hmc::get_arg_str(0)?.as_ref());
-    let value = hmc::get_arg_str(1)?.parse::<i64>().unwrap();
-    let key = make_approve_key(&sender, &spender);
-    hmc::write_state(&key, &value.to_be_bytes());
-
-    Ok(true)
-}
-
-fn make_approve_key(owner: &[u8], spender: &[u8]) -> Vec<u8> {
-    make_key_by_parts(vec!["allowed".as_bytes(), &owner, &spender])
+fn make_approve_key(owner: &Address, spender: &Address) -> Vec<u8> {
+    make_key_by_parts(vec![b"allowed", &owner.to_bytes(), &spender.to_bytes()])
 }
 
 fn make_key_by_parts(parts: Vec<&[u8]>) -> Vec<u8> {
-    parts.join(&('/' as u8))
+    parts.join(&b'/')
 }
 
-fn call_transfer() -> Result<i32, String> {
-    let to = hmc::hex_to_bytes(hmc::get_arg_str(0)?.as_ref());
-    let amount = hmc::get_arg_str(1)?.parse::<i64>().unwrap();
-    let sender = hmc::get_sender()?;
-
-    _transfer(&sender, &to, amount)
-}
-
-fn _transfer(sender: &[u8], to: &[u8], amount: i64) -> Result<i32, String> {
+fn _transfer(sender: &Address, to: &Address, amount: i64) -> Result<i64, Error> {
     let from_balance = _balance_of(&sender)?;
     if from_balance < amount {
-        return Err(format!("error: {} < {}", from_balance, amount));
+        return Err(error::from_str(format!(
+            "error: {} < {}",
+            from_balance, amount
+        )));
     }
-    hmc::write_state(&sender, &(from_balance - amount).to_be_bytes());
+    api::write_state(&sender.to_bytes(), &(from_balance - amount).to_bytes());
     let to_balance = _balance_of(&to).unwrap_or(0);
-    let to_amount = (to_balance + amount).to_be_bytes();
-    hmc::write_state(&to, &to_amount);
-    hmc::emit_event(
+    let to_amount = to_balance + amount;
+    api::write_state(&to.to_bytes(), &to_amount.to_bytes());
+    api::emit_event(
         "Transfer",
         format!("from={:X?} to={:X?} amount={}", sender, to, amount).as_bytes(),
-    )
-    .unwrap();
+    )?;
 
-    Ok(hmc::return_value(&to_amount))
+    Ok(to_amount)
 }
 
-#[cfg_attr(not(feature = "emulation"), no_mangle)]
 #[allow(non_snake_case)]
-pub fn balanceOf() -> i32 {
-    let sender = hmc::get_sender().unwrap();
-    match _balance_of(&sender) {
-        Ok(v) => hmc::return_value(&v.to_be_bytes()),
-        Err(e) => {
-            hmc::log(e.as_bytes());
-            -1
-        }
-    }
+#[contract]
+pub fn balanceOf() -> R<i64> {
+    let sender = api::get_sender()?;
+    Ok(Some(_balance_of(&sender)?))
 }
 
-fn _balance_of(addr: &[u8]) -> Result<i64, String> {
-    match hmc::read_state(addr) {
-        Ok(v) => Ok(bytes_to_i64(&v)),
-        Err(e) => Err(e),
-    }
+fn _balance_of(addr: &Address) -> Result<i64, Error> {
+    api::read_state(addr)
 }
 
-#[cfg_attr(not(feature = "emulation"), no_mangle)]
 #[allow(non_snake_case)]
-pub fn transferFrom() -> i32 {
-    match _transfer_from() {
-        Ok(v) => v,
-        Err(e) => {
-            hmc::log(e.as_bytes());
-            -1
-        }
-    }
-}
-
-fn _transfer_from() -> Result<i32, String> {
-    let sender = hmc::get_sender()?;
-    let from = hmc::hex_to_bytes(hmc::get_arg_str(0)?.as_ref());
-    let to = hmc::hex_to_bytes(hmc::get_arg_str(1)?.as_ref());
-    let value = hmc::get_arg_str(2)?.parse::<i64>().unwrap();
+#[contract]
+pub fn transferFrom() -> R<i64> {
+    let sender = api::get_sender()?;
+    let from: Address = api::get_arg(0)?;
+    let to: Address = api::get_arg(1)?;
+    let value: i64 = api::get_arg(2)?;
 
     let key = make_approve_key(&from, &sender);
-    let allowed = bytes_to_i64(&hmc::read_state(&key)?);
+    let allowed: i64 = api::read_state(&key)?;
 
     if value > allowed {
-        return Err("allowed value is insuficient".to_string());
+        return Err(error::from_str("allowed value is insuficient"));
     }
 
-    hmc::write_state(&key, &(allowed - value).to_be_bytes());
-
-    _transfer(&from, &to, value)
+    api::write_state(&key, &(allowed - value).to_bytes());
+    Ok(Some(_transfer(&from, &to, value)?))
 }
 
 #[cfg(test)]
 mod tests {
     extern crate hmemu;
     use super::*;
+    use hmemu::types::ArgsBuilder;
 
-    const SENDER1_ADDR: &str = "0x1221a0726d56aEdeA9dBe2522DdAE3Dd8ED0f36c";
-    const SENDER2_ADDR: &str = "0xD8eba1f372b9e0D378259F150d52C2e6C2e4109a";
+    const SENDER1_ADDR: Address = *b"00000000000000000001";
+    const SENDER2_ADDR: Address = *b"00000000000000000002";
 
     #[test]
     fn test_init() {
-        let sender = hmc::hex_to_bytes(SENDER1_ADDR);
         hmemu::run_process(|| {
-            hmemu::call_contract(&sender, Vec::<String>::new(), || Ok(init())).unwrap();
+            let _ =
+                hmemu::call_contract(&SENDER1_ADDR, ArgsBuilder::new().convert_to_vec(), || {
+                    Ok(init())
+                })?;
             {
-                let v = bytes_to_i64(&hmc::read_state(&sender)?);
+                let v: i64 = api::read_state(&SENDER1_ADDR)?;
                 assert_eq!(TOTAL_SUPPLY, v);
             }
             Ok(0)
@@ -177,30 +126,58 @@ mod tests {
 
     #[test]
     fn test_transfer() {
-        let sender1 = hmc::hex_to_bytes(SENDER1_ADDR);
-        let sender2 = hmc::hex_to_bytes(SENDER2_ADDR);
-
         hmemu::run_process(|| {
-            hmemu::call_contract(&sender1, Vec::<String>::new(), || Ok(init())).unwrap();
-            hmemu::call_contract(&sender1, vec![SENDER2_ADDR, "100"], || Ok(call_transfer()?))
-                .unwrap();
+            {
+                let _ = hmemu::call_contract(&SENDER1_ADDR, vec![], || Ok(init())).unwrap();
+            }
 
             {
-                let b1 = _balance_of(&sender1)?;
+                let args = {
+                    let mut args = ArgsBuilder::new();
+                    args.push(SENDER2_ADDR);
+                    args.push(100i64);
+                    args.convert_to_vec()
+                };
+                let balance: i64 = hmemu::call_contract(&SENDER1_ADDR, args, || Ok(transfer()?))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(100, balance);
+            }
+
+            {
+                let b1: i64 = hmemu::call_contract(&SENDER1_ADDR, vec![], || Ok(balanceOf()?))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(TOTAL_SUPPLY - 100, b1);
 
-                let b2 = _balance_of(&sender2)?;
+                let b2: i64 = hmemu::call_contract(&SENDER2_ADDR, vec![], || Ok(balanceOf()?))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(100, b2);
             }
 
-            hmemu::call_contract(&sender2, vec![SENDER1_ADDR, "100"], || Ok(call_transfer()?))
-                .unwrap();
+            {
+                let args = {
+                    let mut args = ArgsBuilder::new();
+                    args.push(SENDER1_ADDR);
+                    args.push(100i64);
+                    args.convert_to_vec()
+                };
+                let balance: i64 = hmemu::call_contract(&SENDER2_ADDR, args, || Ok(transfer()?))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(TOTAL_SUPPLY, balance);
+            }
 
             {
-                let b1 = _balance_of(&sender1)?;
+                let b1: i64 = hmemu::call_contract(&SENDER1_ADDR, vec![], || Ok(balanceOf()?))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(TOTAL_SUPPLY, b1);
 
-                let b2 = _balance_of(&sender2)?;
+                let b2: i64 = hmemu::call_contract(&SENDER2_ADDR, vec![], || Ok(balanceOf()?))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(0, b2);
             }
 
@@ -211,22 +188,36 @@ mod tests {
 
     #[test]
     fn test_approve() {
-        let sender1 = hmc::hex_to_bytes(SENDER1_ADDR);
-
         hmemu::run_process(|| {
-            hmemu::call_contract(&sender1, Vec::<String>::new(), || Ok(init())).unwrap();
+            let _ = hmemu::call_contract(&SENDER1_ADDR, vec![], || Ok(init()))?;
 
-            hmemu::call_contract(&sender1, vec![SENDER2_ADDR, "100"], || {
-                assert_eq!(true, _approve()?);
-                Ok(0)
-            })
-            .unwrap();
+            {
+                let args = {
+                    let mut args = ArgsBuilder::new();
+                    args.push(SENDER2_ADDR);
+                    args.push(100i64);
+                    args.convert_to_vec()
+                };
+                hmemu::call_contract(&SENDER1_ADDR, args, || {
+                    assert_eq!(Some(true), approve()?);
+                    Ok(0)
+                })
+                .unwrap();
+            }
 
-            hmemu::call_contract(&sender1, vec![SENDER1_ADDR, SENDER2_ADDR], || {
-                assert_eq!(100, _allowance()?);
-                Ok(0)
-            })
-            .unwrap();
+            {
+                let args = {
+                    let mut args = ArgsBuilder::new();
+                    args.push(SENDER1_ADDR);
+                    args.push(SENDER2_ADDR);
+                    args.convert_to_vec()
+                };
+                hmemu::call_contract(&SENDER1_ADDR, args, || {
+                    assert_eq!(Some(100), allowance()?);
+                    Ok(0)
+                })
+                .unwrap();
+            }
 
             Ok(0)
         })
@@ -235,28 +226,43 @@ mod tests {
 
     #[test]
     fn test_transfer_from() {
-        let sender1 = hmc::hex_to_bytes(SENDER1_ADDR);
-        let sender2 = hmc::hex_to_bytes(SENDER2_ADDR);
-
         hmemu::run_process(|| {
-            hmemu::call_contract(&sender1, Vec::<String>::new(), || Ok(init())).unwrap();
-
-            hmemu::call_contract(&sender1, vec![SENDER2_ADDR, "100"], || {
-                assert_eq!(true, _approve()?);
-                Ok(0)
-            })
-            .unwrap();
-
-            hmemu::call_contract(&sender2, vec![SENDER1_ADDR, SENDER2_ADDR, "100"], || {
-                Ok(_transfer_from()?)
-            })
-            .unwrap();
+            let _ = hmemu::call_contract(&SENDER1_ADDR, vec![], || Ok(init()))?;
 
             {
-                let b1 = _balance_of(&sender1)?;
+                let args = {
+                    let mut args = ArgsBuilder::new();
+                    args.push(SENDER2_ADDR);
+                    args.push(100i64);
+                    args.convert_to_vec()
+                };
+                hmemu::call_contract(&SENDER1_ADDR, args, || {
+                    assert_eq!(Some(true), approve()?);
+                    Ok(0)
+                })
+                .unwrap();
+            }
+
+            {
+                let args = {
+                    let mut args = ArgsBuilder::new();
+                    args.push(SENDER1_ADDR);
+                    args.push(SENDER2_ADDR);
+                    args.push(100i64);
+                    args.convert_to_vec()
+                };
+                hmemu::call_contract(&SENDER2_ADDR, args, || Ok(transferFrom()?)).unwrap();
+            }
+
+            {
+                let b1: i64 = hmemu::call_contract(&SENDER1_ADDR, vec![], || Ok(balanceOf()?))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(TOTAL_SUPPLY - 100, b1);
 
-                let b2 = _balance_of(&sender2)?;
+                let b2: i64 = hmemu::call_contract(&SENDER2_ADDR, vec![], || Ok(balanceOf()?))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(100, b2);
             }
 
