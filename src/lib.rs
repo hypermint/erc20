@@ -3,7 +3,7 @@ use hmcdk::api;
 use hmcdk::error;
 use hmcdk::prelude::*;
 
-pub static TOTAL_SUPPLY: i64 = 100000 * 10;
+pub static TOTAL_SUPPLY: i64 = 100_000 * 10;
 
 #[contract]
 pub fn init() -> R<i32> {
@@ -42,15 +42,11 @@ pub fn allowance() -> R<i64> {
 }
 
 fn make_approve_key(owner: &Address, spender: &Address) -> Vec<u8> {
-    make_key_by_parts(vec![
-        "allowed".as_bytes(),
-        &owner.to_bytes(),
-        &spender.to_bytes(),
-    ])
+    make_key_by_parts(vec![b"allowed", &owner.to_bytes(), &spender.to_bytes()])
 }
 
 fn make_key_by_parts(parts: Vec<&[u8]>) -> Vec<u8> {
-    parts.join(&('/' as u8))
+    parts.join(&b'/')
 }
 
 fn _transfer(sender: &Address, to: &Address, amount: i64) -> Result<i64, Error> {
